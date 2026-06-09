@@ -1,10 +1,10 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import * as echarts from 'echarts'
 import GlassCard from '@/components/GlassCard'
 import { useStore } from '@/store'
-import { workingFaces } from '@/data/mock'
+import { workingFaces, mines, type AlertRecord } from '@/data/mock'
 import { useShallow } from 'zustand/react/shallow'
-import { TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Wrench, MapPin } from 'lucide-react'
+import { TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Wrench, MapPin, ChevronDown, FileText, ClipboardList } from 'lucide-react'
 
 function getRectColor(rate: number) {
   if (rate > 85) return '#22c55e'
@@ -76,6 +76,100 @@ function buildPrevRectRates(currentRate: number) {
 }
 
 const priorityBg: Record<string, string> = { 高: 'bg-red-500/20 text-red-400', 中: 'bg-yellow-500/20 text-yellow-400', 低: 'bg-green-500/20 text-green-400' }
+
+function FaceReportPreview() {
+  const { roleMineId, roleFaceId } = useStore(useShallow(s => ({ roleMineId: s.roleMineId, roleFaceId: s.roleFaceId })))
+  const getDisposalReview = useStore((s) => s.getDisposalReview)
+  const [expandedFace, setExpandedFace] = useState<string | null>(roleFaceId)
+
+  const faces = useMemo(() => {
+    if (!roleMineId) return []
+    const all = workingFaces[roleMineId] || []
+    if (roleFaceId) return all.filter(f => f.id === roleFaceId)
+    return all
+  }, [roleMineId, roleFaceId])
+
+  const mine = mines.find(m => m.id === roleMineId)
+  const reviewData = useMemo(() => getDisposalReview(), [getDisposalReview])
+
+  const faceReports = useMemo(() => {
+    return faces.map(face => {
+      const faceReview = reviewData.find(r => r.faceId === face.id)
+      const faults = [
+        { type: '采煤机故障', count: Math.round((100 - mine!.safetyIndex) * 0.01 * (face.gasConcentration > 1 ? 2 : 1)) },
+        { type: '液压支架故障', count: Math.round((100 - mine!.safetyIndex) * 0.007) },
+        { type: '输送机故障', count: Math.round((100 - mine!.safetyIndex) * 0.012) },
+        { type: '通风设备故障', count: Math.round((100 - mine!.safetyIndex) * 0.004) },
+      ].filter(f => f.count > 0)
+      const riskSummary = face.gasConcentration > 1
+        ? `瓦斯浓度${face.gasConcentration}%超限，属于高风险工作面`
+        : face.status === 'warning'
+          ? `状态预警，需重点关注粉尘和振动指标`
+          : `当前安全指标正常，建议持续监控`
+      return { face, faceReview, faults, riskSummary }
+    })
+  }, [faces, reviewData, mine])
+
+  if (faces.length === 0) return <p className="text-white/40 text-sm text-center py-6">暂无工作面数据</p>
+
+  return (
+    <div className="space-y-3">
+      {faceReports.map(({ face, faceReview, faults, riskSummary }) => (
+        <div key={face.id} className="rounded-lg border border-white/10 overflow-hidden">
+          <button
+            onClick={() => setExpandedFace(expandedFace === face.id ? null : face.id)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${face.status === 'safe' ? 'bg-green-400' : face.status === 'warning' ? 'bg-orange-400' : 'bg-red-400'}`} />
+              <span className="text-white text-sm font-medium">{face.name}</span>
+              <span className="text-white/30 text-xs">{riskSummary.slice(0, 20)}...</span>
+            </div>
+            <ChevronDown className={`w-4 h-4 text-white/30 transition-transform ${expandedFace === face.id ? 'rotate-180' : ''}`} />
+          </button>
+          {expandedFace === face.id && (
+            <div className="px-4 py-3 space-y-3 border-t border-white/5">
+              <div>
+                <h5 className="text-white/50 text-xs font-semibold mb-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-orange-400" />风险摘要</h5>
+                <p className="text-white/80 text-sm">{riskSummary}</p>
+                <div className="flex gap-4 mt-1 text-xs text-white/40">
+                  <span>瓦斯: <span className={face.gasConcentration > 1 ? 'text-red-400' : 'text-white/60'}>{face.gasConcentration}%</span></span>
+                  <span>粉尘: <span className="text-white/60">{face.dustLevel}mg/m³</span></span>
+                  <span>振动: <span className="text-white/60">{face.vibrationLevel}mm/s</span></span>
+                </div>
+              </div>
+              {faceReview && faceReview.totalAlerts > 0 && (
+                <div>
+                  <h5 className="text-white/50 text-xs font-semibold mb-1 flex items-center gap-1"><ClipboardList className="w-3 h-3 text-blue-400" />处置复盘</h5>
+                  <div className="grid grid-cols-4 gap-2 text-xs">
+                    <div className="p-2 rounded bg-white/5 text-center"><span className="text-white/40 block">预警数</span><span className="text-white font-bold">{faceReview.totalAlerts}</span></div>
+                    <div className="p-2 rounded bg-white/5 text-center"><span className="text-white/40 block">处置耗时</span><span className="text-yellow-400 font-bold">{faceReview.l1AvgDisposalMin}min</span></div>
+                    <div className="p-2 rounded bg-white/5 text-center"><span className="text-white/40 block">撤离人数</span><span className="text-red-400 font-bold">{faceReview.totalEvacuated}</span></div>
+                    <div className="p-2 rounded bg-white/5 text-center"><span className="text-white/40 block">闭环率</span><span className={`font-bold ${faceReview.closureRate >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>{faceReview.closureRate}%</span></div>
+                  </div>
+                </div>
+              )}
+              {faults.length > 0 && (
+                <div>
+                  <h5 className="text-white/50 text-xs font-semibold mb-1 flex items-center gap-1"><Wrench className="w-3 h-3 text-purple-400" />设备故障分布</h5>
+                  <div className="flex gap-2 flex-wrap">
+                    {faults.map(f => (
+                      <span key={f.type} className="text-xs px-2 py-1 rounded bg-white/5 text-white/60">{f.type} <span className="text-white font-bold">{f.count}</span></span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div>
+                <h5 className="text-white/50 text-xs font-semibold mb-1 flex items-center gap-1"><MapPin className="w-3 h-3 text-green-400" />下周巡检重点</h5>
+                <p className="text-white/70 text-sm">建议重点关注 {face.name} 的{face.gasConcentration > 1 ? '瓦斯浓度变化趋势' : '设备运行状态和粉尘指标'}，{faceReview && faceReview.totalAlerts > 0 ? `本周已发生${faceReview.totalAlerts}次预警需跟踪整改` : '本周无预警，保持常规巡检频率'}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function Reports() {
   const { userRole, roleMineId, roleFaceId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId, roleFaceId: s.roleFaceId })))
@@ -258,6 +352,19 @@ export default function Reports() {
           </div>
         </GlassCard>
       </div>
+
+      {(userRole === 'mine' || userRole === 'team') && roleMineId && (
+        <GlassCard>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-semibold text-sm flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-400" />
+              班组周报预览
+            </h2>
+            <span className="text-white/30 text-xs">导出前预览</span>
+          </div>
+          <FaceReportPreview />
+        </GlassCard>
+      )}
     </div>
   )
 }

@@ -10,7 +10,7 @@ interface AppState {
   userRole: UserRole;
   roleMineId: string | null;
   roleFaceId: string | null;
-  alertFilter: { level: string; status: string; mineId: string };
+  alertFilter: { level: string; status: string; mineId: string; faceId: string };
   alerts: AlertRecord[];
   geologyUploadedPoints: RiskPoint[];
   geologyAnalyzed: boolean;
@@ -36,6 +36,17 @@ interface AppState {
   getFilteredProvinces: () => typeof provinces;
   getFilteredFaces: () => typeof workingFaces[string];
   getFaceLevelRanking: () => { name: string; value: number; id: string }[];
+  getDisposalReview: () => {
+    faceId: string;
+    faceName: string;
+    mineName: string;
+    totalAlerts: number;
+    l1AvgDisposalMin: number;
+    l2AvgApprovalMin: number;
+    totalEvacuated: number;
+    closureRate: number;
+    alerts: AlertRecord[];
+  }[];
   getScopeLabel: () => string;
   getComputedStats: () => {
     safetyIndex: number;
@@ -74,7 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
   userRole: 'group',
   roleMineId: null,
   roleFaceId: null,
-  alertFilter: { level: '', status: '', mineId: '' },
+  alertFilter: { level: '', status: '', mineId: '', faceId: '' },
   alerts: initialAlerts,
   geologyUploadedPoints: [],
   geologyAnalyzed: false,
@@ -86,20 +97,20 @@ export const useStore = create<AppState>((set, get) => ({
   setUserRole: (role) => {
     const state = get();
     if (role === 'group') {
-      set({ userRole: role, roleMineId: null, roleFaceId: null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: '' } });
+      set({ userRole: role, roleMineId: null, roleFaceId: null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: '', faceId: '' } });
     } else if (!state.roleMineId) {
       const firstMine = mines[0];
       const firstFace = workingFaces[firstMine.id]?.[0];
-      set({ userRole: role, roleMineId: firstMine.id, roleFaceId: role === 'team' ? firstFace?.id ?? null : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: firstMine.id } });
+      set({ userRole: role, roleMineId: firstMine.id, roleFaceId: role === 'team' ? firstFace?.id ?? null : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: firstMine.id, faceId: role === 'team' ? (firstFace?.id ?? '') : '' } });
     } else {
       const faces = workingFaces[state.roleMineId] || [];
-      set({ userRole: role, roleFaceId: role === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: state.roleMineId } });
+      set({ userRole: role, roleFaceId: role === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: state.roleMineId, faceId: role === 'team' ? (faces[0]?.id ?? '') : '' } });
     }
   },
   setRoleMineId: (id) => {
     const faces = id ? workingFaces[id] || [] : [];
     const { userRole } = get();
-    set({ roleMineId: id, roleFaceId: userRole === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: id || '' } });
+    set({ roleMineId: id, roleFaceId: userRole === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: id || '', faceId: userRole === 'team' ? (faces[0]?.id ?? '') : '' } });
   },
   setRoleFaceId: (id) => set({ roleFaceId: id }),
   setAlertFilter: (filter) => set((state) => ({ alertFilter: { ...state.alertFilter, ...filter } })),
@@ -272,6 +283,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (alertFilter.level && a.level !== alertFilter.level) return false;
       if (alertFilter.status && a.status !== alertFilter.status) return false;
       if (alertFilter.mineId && a.mineId !== alertFilter.mineId) return false;
+      if (alertFilter.faceId && a.faceId !== alertFilter.faceId) return false;
       return true;
     });
   },
@@ -323,6 +335,59 @@ export const useStore = create<AppState>((set, get) => ({
       return faces.map((f) => ({ name: f.name, value: f.gasConcentration > 1 ? Math.round(f.gasConcentration * 10) : 0, id: f.id })).sort((a, b) => b.value - a.value);
     }
     return get().getFilteredMines().map((m) => ({ name: m.name, value: m.gasOverlimitDuration, id: m.id })).sort((a, b) => b.value - a.value);
+  },
+
+  getDisposalReview: () => {
+    const allAlerts = get().getFilteredAlerts();
+    const faceMap = new Map<string, AlertRecord[]>();
+    allAlerts.forEach((a) => {
+      const list = faceMap.get(a.faceId) || [];
+      list.push(a);
+      faceMap.set(a.faceId, list);
+    });
+    const result: {
+      faceId: string;
+      faceName: string;
+      mineName: string;
+      totalAlerts: number;
+      l1AvgDisposalMin: number;
+      l2AvgApprovalMin: number;
+      totalEvacuated: number;
+      closureRate: number;
+      alerts: AlertRecord[];
+    }[] = [];
+    faceMap.forEach((alerts, faceId) => {
+      const mine = mines.find((m) => m.id === alerts[0].mineId);
+      const faces = workingFaces[alerts[0].mineId] || [];
+      const face = faces.find((f) => f.id === faceId);
+      const l1Closed = alerts.filter((a) => a.level === '1' && a.status === 'closed' && a.disposalRecord);
+      const l1DisposalMins = l1Closed.map((a) => {
+        const start = new Date(a.triggeredAt).getTime();
+        const end = new Date(a.disposalRecord!.disposedAt).getTime();
+        return Math.round((end - start) / 60000);
+      });
+      const l2WithApproval = alerts.filter((a) => a.level === '2' && a.approvals.some((ap) => ap.status === 'approved'));
+      const l2ApprovalMins = l2WithApproval.map((a) => {
+        const start = new Date(a.triggeredAt).getTime();
+        const lastApproved = a.approvals.filter((ap) => ap.status === 'approved' && ap.approvedAt).sort((x, y) => new Date(y.approvedAt!).getTime() - new Date(x.approvedAt!).getTime())[0];
+        if (!lastApproved?.approvedAt) return 0;
+        return Math.round((new Date(lastApproved.approvedAt).getTime() - start) / 60000);
+      });
+      const closedCount = alerts.filter((a) => a.status === 'closed').length;
+      const totalEvacuated = alerts.reduce((s, a) => s + (a.executionRecord?.evacuatedCount || 0), 0);
+      result.push({
+        faceId,
+        faceName: face?.name || faceId,
+        mineName: mine?.name || alerts[0].mineId,
+        totalAlerts: alerts.length,
+        l1AvgDisposalMin: l1DisposalMins.length ? Math.round(l1DisposalMins.reduce((s, v) => s + v, 0) / l1DisposalMins.length) : 0,
+        l2AvgApprovalMin: l2ApprovalMins.length ? Math.round(l2ApprovalMins.reduce((s, v) => s + v, 0) / l2ApprovalMins.length) : 0,
+        totalEvacuated,
+        closureRate: alerts.length ? Math.round((closedCount / alerts.length) * 100) : 0,
+        alerts: alerts.sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime()),
+      });
+    });
+    return result.sort((a, b) => b.totalAlerts - a.totalAlerts);
   },
 
   getScopeLabel: () => {

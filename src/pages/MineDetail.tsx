@@ -50,9 +50,15 @@ function FaceMonitorDrawer({ face, open, onClose }: { face: WorkingFace; open: b
   const dustChartRef = useRef<HTMLDivElement>(null)
   const fanChartRef = useRef<HTMLDivElement>(null)
   const vibChartRef = useRef<HTMLDivElement>(null)
+  const persChartRef = useRef<HTMLDivElement>(null)
 
   const faceAlerts = alerts.filter((a) => a.faceId === face.id && a.status !== 'closed')
   const hasAlerts = faceAlerts.length > 0
+
+  const goToAlerts = () => {
+    navigate(`/alerts?mineId=${face.mineId || ''}&faceId=${face.id}`)
+    onClose()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -60,6 +66,7 @@ function FaceMonitorDrawer({ face, open, onClose }: { face: WorkingFace; open: b
     const dustData = generateHourlyData(face.dustLevel, 5)
     const fanData = generateHourlyData(face.fanStatus, 50)
     const vibData = generateHourlyData(face.vibrationLevel, 0.5)
+    const persData = generateHourlyData(face.personnelCount, 3)
 
     const makeOption = (title: string, data: typeof gasData, unit: string, threshold?: number) => ({
       backgroundColor: 'transparent',
@@ -96,6 +103,19 @@ function FaceMonitorDrawer({ face, open, onClose }: { face: WorkingFace; open: b
       c.setOption(makeOption('振动水平', vibData, 'mm/s') as any)
       charts.push(c)
     }
+    if (persChartRef.current) {
+      const c = echarts.init(persChartRef.current, 'dark')
+      c.setOption({
+        ...makeOption('人员数量', persData, '人'),
+        series: [{
+          type: 'line', data: persData.map((d) => d.value), smooth: true, symbol: 'circle', symbolSize: 4,
+          lineStyle: { width: 2, color: '#a78bfa' }, itemStyle: { color: '#a78bfa' },
+          areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(167,139,250,0.3)' }, { offset: 1, color: 'rgba(167,139,250,0.02)' }]) },
+        }],
+        tooltip: { trigger: 'axis', formatter: (p: any) => `${p[0].axisValue}<br/>人员: ${p[0].value}人` },
+      } as any)
+      charts.push(c)
+    }
 
     const onResize = () => charts.forEach((c) => c.resize())
     window.addEventListener('resize', onResize)
@@ -122,7 +142,7 @@ function FaceMonitorDrawer({ face, open, onClose }: { face: WorkingFace; open: b
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
             <span className="text-red-300 text-sm">当前有 {faceAlerts.length} 条预警</span>
-            <button onClick={() => { navigate('/alerts'); onClose(); }} className="ml-auto flex items-center gap-1 text-xs text-red-400 hover:text-red-300">
+            <button onClick={goToAlerts} className="ml-auto flex items-center gap-1 text-xs text-red-400 hover:text-red-300">
               <ArrowRight className="w-3 h-3" />查看预警
             </button>
           </div>
@@ -168,10 +188,13 @@ function FaceMonitorDrawer({ face, open, onClose }: { face: WorkingFace; open: b
           <GlassCard className="p-2">
             <div ref={vibChartRef} className="h-44 w-full" />
           </GlassCard>
+          <GlassCard className="p-2">
+            <div ref={persChartRef} className="h-44 w-full" />
+          </GlassCard>
         </div>
 
         <button
-          onClick={() => { navigate('/alerts'); onClose(); }}
+          onClick={goToAlerts}
           className="w-full py-2.5 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 text-sm font-medium hover:bg-blue-500/30 transition-colors flex items-center justify-center gap-2"
         >
           <AlertTriangle className="w-4 h-4" />

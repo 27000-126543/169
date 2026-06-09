@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "DIN Alternate";
+  src: local("DIN Alternate"), local("DIN Alternate Bold");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --bg-primary: #0A1628;
+  --bg-secondary: #0F2035;
+  --bg-card: rgba(15, 32, 53, 0.6);
+  --accent: #00D4FF;
+  --accent-dim: rgba(0, 212, 255, 0.15);
+  --text-primary: #E8F0FE;
+  --text-secondary: #7B8CA8;
+  --border-color: rgba(0, 212, 255, 0.12);
+  --success: #00E676;
+  --danger: #FF4D6A;
+  --warning: #FFB300;
+
+  font-family: "DIN Alternate", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+@layer components {
+  .glass-card {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+  }
+
+  .glass-card-glow {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 77, 106, 0.3);
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(255, 77, 106, 0.15), inset 0 0 20px rgba(255, 77, 106, 0.05);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.4);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 77, 106, 0.15), inset 0 0 20px rgba(255, 77, 106, 0.05);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 77, 106, 0.3), inset 0 0 30px rgba(255, 77, 106, 0.1);
+  }
+}
+
+@keyframes number-flip {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes chart-draw {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in-up {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-number-flip {
+  animation: number-flip 0.6s ease-out forwards;
+}
+
+.animate-chart-draw {
+  animation: chart-draw 1.5s ease-out forwards;
+  stroke-dasharray: 1000;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+}
+
+.font-din {
+  font-family: "DIN Alternate", "Roboto Mono", monospace;
+}

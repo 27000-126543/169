@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter, Bell, X } from 'lucide-react';
+import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter, Bell, FileText, UserMinus, ArrowRight } from 'lucide-react';
 import GlassCard from '@/components/GlassCard';
 import { useStore } from '@/store';
 import { workingFaces, type AlertRecord, type ApprovalStep } from '@/data/mock';
+import { useNavigate } from 'react-router-dom';
 
 const levelOptions = [
   { value: '', label: '全部' },
@@ -75,11 +76,53 @@ function StepIcon({ step, isCurrent }: { step: ApprovalStep; isCurrent: boolean 
   );
 }
 
+function ExecutionRecord({ record }: { record: NonNullable<AlertRecord['executionRecord']> }) {
+  return (
+    <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+      <h5 className="text-red-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+        <UserMinus className="w-3.5 h-3.5" />
+        停产撤人执行记录
+      </h5>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div><span className="text-white/40">执行时间</span><p className="text-white/80">{formatTime(record.executedAt)}</p></div>
+        <div><span className="text-white/40">执行人</span><p className="text-white/80">{record.executor}</p></div>
+        <div><span className="text-white/40">撤离人数</span><p className="text-white/80">{record.evacuatedCount} 人</p></div>
+        <div><span className="text-white/40">执行结果</span><p className="text-green-400">{record.result}</p></div>
+      </div>
+    </div>
+  );
+}
+
+function DisposalRecord({ record }: { record: NonNullable<AlertRecord['disposalRecord']> }) {
+  return (
+    <div className="mt-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+      <h5 className="text-yellow-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+        <FileText className="w-3.5 h-3.5" />
+        现场处置记录
+      </h5>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div><span className="text-white/40">处置时间</span><p className="text-white/80">{formatTime(record.disposedAt)}</p></div>
+        <div><span className="text-white/40">处置人</span><p className="text-white/80">{record.disposer}</p></div>
+        <div className="col-span-2"><span className="text-white/40">处置结果</span><p className="text-white/80">{record.result}</p></div>
+      </div>
+    </div>
+  );
+}
+
 function ApprovalFlow({ alert }: { alert: AlertRecord }) {
   const approveStep = useStore((s) => s.approveStep);
   const closeAlert = useStore((s) => s.closeAlert);
+  const [showExecForm, setShowExecForm] = useState(false);
+  const [executor, setExecutor] = useState('');
+  const [evacuatedCount, setEvacuatedCount] = useState('');
   const currentStepIndex = alert.approvals.findIndex((a) => a.status === 'pending');
   const allApproved = alert.approvals.every((a) => a.status === 'approved');
+
+  const handleExecute = () => {
+    if (!executor || !evacuatedCount) return;
+    closeAlert(alert.id, { executor, evacuatedCount: parseInt(evacuatedCount) || 0 });
+    setShowExecForm(false);
+  };
 
   return (
     <div className="mt-4">
@@ -109,25 +152,42 @@ function ApprovalFlow({ alert }: { alert: AlertRecord }) {
           </div>
         ))}
       </div>
-      {alert.status === 'closed' ? (
-        <div className="mt-3 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-gray-400" />
-          <span className="text-gray-400 text-sm font-medium">已处置</span>
-        </div>
-      ) : allApproved && alert.level === '2' && alert.status === 'approved' ? (
-        <button
-          onClick={() => closeAlert(alert.id)}
-          className="mt-3 px-4 py-2 text-sm rounded-md bg-red-500/30 text-red-300 border border-red-500/40 hover:bg-red-500/50 transition-colors font-medium"
-        >
-          执行停产撤人
-        </button>
-      ) : null}
+      {alert.executionRecord && <ExecutionRecord record={alert.executionRecord} />}
+      {allApproved && alert.level === '2' && alert.status === 'approved' && !alert.executionRecord && (
+        showExecForm ? (
+          <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <h5 className="text-red-400 text-xs font-semibold mb-2">执行停产撤人</h5>
+            <div className="space-y-2">
+              <input value={executor} onChange={(e) => setExecutor(e.target.value)} placeholder="执行人姓名" className="w-full bg-white/10 text-white text-sm rounded-md px-3 py-1.5 border border-white/10 outline-none" />
+              <input value={evacuatedCount} onChange={(e) => setEvacuatedCount(e.target.value)} placeholder="撤离人数" type="number" className="w-full bg-white/10 text-white text-sm rounded-md px-3 py-1.5 border border-white/10 outline-none" />
+              <div className="flex gap-2">
+                <button onClick={handleExecute} className="px-3 py-1.5 text-xs rounded-md bg-red-500/40 text-red-200 border border-red-500/40 hover:bg-red-500/60 transition-colors">确认执行</button>
+                <button onClick={() => setShowExecForm(false)} className="px-3 py-1.5 text-xs rounded-md bg-white/10 text-white/50 border border-white/10 hover:bg-white/20 transition-colors">取消</button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowExecForm(true)}
+            className="mt-3 px-4 py-2 text-sm rounded-md bg-red-500/30 text-red-300 border border-red-500/40 hover:bg-red-500/50 transition-colors font-medium"
+          >
+            执行停产撤人
+          </button>
+        )
+      )}
     </div>
   );
 }
 
 function LevelOneActions({ alert }: { alert: AlertRecord }) {
-  const closeAlert = useStore((s) => s.closeAlert);
+  const disposeAlert = useStore((s) => s.disposeAlert);
+  const [showForm, setShowForm] = useState(false);
+  const [disposer, setDisposer] = useState('');
+  const [result, setResult] = useState('');
+
+  if (alert.status === 'closed' && alert.disposalRecord) {
+    return <DisposalRecord record={alert.disposalRecord} />;
+  }
   if (alert.status === 'closed') {
     return (
       <div className="mt-3 flex items-center gap-2">
@@ -136,15 +196,23 @@ function LevelOneActions({ alert }: { alert: AlertRecord }) {
       </div>
     );
   }
-  return (
+
+  return showForm ? (
+    <div className="mt-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+      <h5 className="text-yellow-400 text-xs font-semibold mb-2">现场处置</h5>
+      <div className="space-y-2">
+        <input value={disposer} onChange={(e) => setDisposer(e.target.value)} placeholder="处置人姓名" className="w-full bg-white/10 text-white text-sm rounded-md px-3 py-1.5 border border-white/10 outline-none" />
+        <input value={result} onChange={(e) => setResult(e.target.value)} placeholder="处置结果" className="w-full bg-white/10 text-white text-sm rounded-md px-3 py-1.5 border border-white/10 outline-none" />
+        <div className="flex gap-2">
+          <button onClick={() => { if (!disposer || !result) return; disposeAlert(alert.id, { disposer, result }); setShowForm(false); }} className="px-3 py-1.5 text-xs rounded-md bg-yellow-500/30 text-yellow-200 border border-yellow-500/40 hover:bg-yellow-500/50 transition-colors">确认处置</button>
+          <button onClick={() => setShowForm(false)} className="px-3 py-1.5 text-xs rounded-md bg-white/10 text-white/50 border border-white/10 hover:bg-white/20 transition-colors">取消</button>
+        </div>
+      </div>
+    </div>
+  ) : (
     <div className="mt-3 flex items-center gap-2">
       <span className="text-yellow-400/70 text-xs">一级预警 · 待现场处置</span>
-      <button
-        onClick={() => closeAlert(alert.id)}
-        className="px-3 py-1.5 text-xs rounded-md bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors"
-      >
-        立即处理
-      </button>
+      <button onClick={() => setShowForm(true)} className="px-3 py-1.5 text-xs rounded-md bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors">立即处理</button>
     </div>
   );
 }
@@ -158,6 +226,7 @@ export default function Alerts() {
   const userRole = useStore((s) => s.userRole);
   const roleMineId = useStore((s) => s.roleMineId);
   const getFilteredMines = useStore((s) => s.getFilteredMines);
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newCount, setNewCount] = useState(0);
 
@@ -264,7 +333,7 @@ export default function Alerts() {
                     <span>预警类型：{alert.type === 'gas' ? '瓦斯超限' : '人员违规'}</span>
                     <span>级别：{alert.level}级</span>
                   </div>
-                  {alert.level === '1' && alert.status === 'pending' ? (
+                  {alert.level === '1' ? (
                     <LevelOneActions alert={alert} />
                   ) : (
                     <ApprovalFlow alert={alert} />
@@ -294,7 +363,16 @@ export default function Alerts() {
                 <p className="text-white/50 text-xs mb-1">描述</p>
                 <p className="text-white/80 text-sm leading-relaxed">{selected.description}</p>
               </div>
-              {selected.level === '1' && selected.status === 'pending' ? (
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <button
+                  onClick={() => navigate(`/mine/${selected.mineId}`)}
+                  className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  查看矿区详情
+                </button>
+              </div>
+              {selected.level === '1' ? (
                 <LevelOneActions alert={selected} />
               ) : (
                 <ApprovalFlow alert={selected} />

@@ -61,6 +61,17 @@ export interface AlertRecord {
   triggeredAt: string;
   description: string;
   approvals: ApprovalStep[];
+  executionRecord?: {
+    executedAt: string;
+    executor: string;
+    evacuatedCount: number;
+    result: string;
+  };
+  disposalRecord?: {
+    disposedAt: string;
+    disposer: string;
+    result: string;
+  };
 }
 
 export interface ApprovalStep {

@@ -106,12 +106,18 @@ export default function Reports() {
     if (current.hazardRectificationRate > 85) {
       recs.push({ icon: TrendingUp, text: '隐患整改率良好，建议保持当前力度', priority: '低', color: 'text-green-400' })
     }
-    const faceNames: string[] = []
-    filteredMines.forEach(m => {
-      (workingFaces[m.id] || []).forEach(f => faceNames.push(f.name))
-    })
-    const topFaces = faceNames.slice(0, 3).join('、')
-    recs.push({ icon: MapPin, text: `推荐下周重点巡检区域：${topFaces}`, priority: '中', color: 'text-yellow-400' })
+    const faceNames = (current as any).faceNames as string[] | undefined
+    if (faceNames && faceNames.length > 0) {
+      const topFaces = faceNames.slice(0, 3).join('、')
+      recs.push({ icon: MapPin, text: `推荐下周重点巡检区域：${topFaces}`, priority: '中', color: 'text-yellow-400' })
+    } else {
+      const allFaces: string[] = []
+      filteredMines.forEach(m => {
+        (workingFaces[m.id] || []).forEach(f => allFaces.push(f.name))
+      })
+      const topFaces = allFaces.slice(0, 3).join('、')
+      recs.push({ icon: MapPin, text: `推荐下周重点巡检区域：${topFaces}`, priority: '中', color: 'text-yellow-400' })
+    }
     return recs
   }, [current, filteredMines])
 

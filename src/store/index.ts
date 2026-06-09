@@ -24,7 +24,8 @@ interface AppState {
   setRoleFaceId: (id: string | null) => void;
   setAlertFilter: (filter: Partial<AppState['alertFilter']>) => void;
   approveStep: (alertId: string, stepIndex: number) => void;
-  closeAlert: (alertId: string) => void;
+  closeAlert: (alertId: string, executionRecord?: { executor: string; evacuatedCount: number }) => void;
+  disposeAlert: (alertId: string, disposalRecord: { disposer: string; result: string }) => void;
   setGeologyUploadedPoints: (points: RiskPoint[]) => void;
   setGeologyAnalyzed: (v: boolean) => void;
   checkAndGenerateAlerts: () => void;
@@ -34,6 +35,7 @@ interface AppState {
   getFilteredMines: () => typeof mines;
   getFilteredProvinces: () => typeof provinces;
   getFilteredFaces: () => typeof workingFaces[string];
+  getFaceLevelRanking: () => { name: string; value: number; id: string }[];
   getScopeLabel: () => string;
   getComputedStats: () => {
     safetyIndex: number;
@@ -124,10 +126,34 @@ export const useStore = create<AppState>((set, get) => ({
       }),
     })),
 
-  closeAlert: (alertId) =>
+  closeAlert: (alertId, executionRecord) =>
     set((state) => ({
       alerts: state.alerts.map((a) =>
-        a.id === alertId ? { ...a, status: 'closed' as const } : a
+        a.id === alertId ? {
+          ...a,
+          status: 'closed' as const,
+          executionRecord: executionRecord ? {
+            executedAt: new Date().toISOString(),
+            executor: executionRecord.executor,
+            evacuatedCount: executionRecord.evacuatedCount,
+            result: '已执行停产撤人',
+          } : a.executionRecord,
+        } : a
+      ),
+    })),
+
+  disposeAlert: (alertId, disposalRecord) =>
+    set((state) => ({
+      alerts: state.alerts.map((a) =>
+        a.id === alertId ? {
+          ...a,
+          status: 'closed' as const,
+          disposalRecord: {
+            disposedAt: new Date().toISOString(),
+            disposer: disposalRecord.disposer,
+            result: disposalRecord.result,
+          },
+        } : a
       ),
     })),
 
@@ -281,6 +307,24 @@ export const useStore = create<AppState>((set, get) => ({
     return faces;
   },
 
+  getFaceLevelRanking: () => {
+    const { userRole, roleMineId, roleFaceId } = get();
+    if (userRole === 'team' && roleMineId) {
+      const faces = workingFaces[roleMineId] || [];
+      if (roleFaceId) {
+        const face = faces.find((f) => f.id === roleFaceId);
+        if (face) return [{ name: face.name, value: face.gasConcentration > 1 ? Math.round(face.gasConcentration * 10) : 0, id: face.id }];
+        return [];
+      }
+      return faces.map((f) => ({ name: f.name, value: f.gasConcentration > 1 ? Math.round(f.gasConcentration * 10) : 0, id: f.id })).sort((a, b) => b.value - a.value);
+    }
+    if (userRole === 'mine' && roleMineId) {
+      const faces = workingFaces[roleMineId] || [];
+      return faces.map((f) => ({ name: f.name, value: f.gasConcentration > 1 ? Math.round(f.gasConcentration * 10) : 0, id: f.id })).sort((a, b) => b.value - a.value);
+    }
+    return get().getFilteredMines().map((m) => ({ name: m.name, value: m.gasOverlimitDuration, id: m.id })).sort((a, b) => b.value - a.value);
+  },
+
   getScopeLabel: () => {
     const { userRole, roleMineId, roleFaceId } = get();
     if (userRole === 'group') return '全国';
@@ -335,6 +379,44 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   getComputedWeeklyReport: () => {
+    const { userRole, roleMineId, roleFaceId } = get();
+    const now = new Date();
+    const weekNum = Math.ceil((now.getDate() + new Date(now.getFullYear(), now.getMonth(), 1).getDay()) / 7);
+
+    if ((userRole === 'team' || userRole === 'mine') && roleMineId) {
+      const faces = workingFaces[roleMineId] || [];
+      const targetFaces = (userRole === 'team' && roleFaceId) ? faces.filter((f) => f.id === roleFaceId) : faces;
+      const mine = mines.find((m) => m.id === roleMineId);
+      if (!mine) return { week: `第${weekNum}周`, violationRate: 0, violationRateYoy: 0, violationRateQoq: 0, equipmentFaultTypes: [], hazardRectificationRate: 0, totalViolations: 0, totalFaults: 0 };
+
+      const faceCount = targetFaces.length || 1;
+      const faceNames = targetFaces.map((f) => f.name);
+      const totalViolations = Math.round(mine.violationRate * faceCount * 1.5);
+      const totalFaults = Math.round((100 - mine.safetyIndex) * 0.3 * faceCount);
+      const violationRate = mine.violationRate;
+      const hazardRectificationRate = +(75 + mine.safetyIndex * 0.15 + Math.random() * 5).toFixed(1);
+      const faultScale = totalFaults / 30;
+      const equipmentFaultTypes = [
+        { type: '采煤机故障', count: Math.round(3 * faultScale) },
+        { type: '液压支架故障', count: Math.round(2 * faultScale) },
+        { type: '输送机故障', count: Math.round(4 * faultScale) },
+        { type: '通风设备故障', count: Math.round(1 * faultScale) },
+        { type: '排水设备故障', count: Math.round(1 * faultScale) },
+        { type: '电气故障', count: Math.round(2 * faultScale) },
+      ];
+      return {
+        week: `第${weekNum}周`,
+        violationRate,
+        violationRateYoy: +(-2 + Math.random() * 4).toFixed(1),
+        violationRateQoq: +(-1.5 + Math.random() * 3).toFixed(1),
+        equipmentFaultTypes,
+        hazardRectificationRate,
+        totalViolations,
+        totalFaults,
+        faceNames,
+      };
+    }
+
     const filteredMines = get().getFilteredMines();
     const count = filteredMines.length || 1;
     const violationRate = +(filteredMines.reduce((s, m) => s + m.violationRate, 0) / count).toFixed(1);
@@ -351,8 +433,6 @@ export const useStore = create<AppState>((set, get) => ({
       { type: '排水设备故障', count: Math.round(3 * faultScale) },
       { type: '电气故障', count: Math.round(10 * faultScale) },
     ];
-    const now = new Date();
-    const weekNum = Math.ceil((now.getDate() + new Date(now.getFullYear(), now.getMonth(), 1).getDay()) / 7);
     return {
       week: `第${weekNum}周`,
       violationRate,

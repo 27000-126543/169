@@ -24,10 +24,11 @@ export default function Dashboard() {
   const barRef = useRef<HTMLDivElement>(null)
 
   const filteredProvinces = useMemo(() => useStore.getState().getFilteredProvinces(), [userRole, roleMineId, roleFaceId, selectedProvince])
-  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId, roleFaceId, selectedProvince])
   const stats = useMemo(() => useStore.getState().getComputedStats(), [userRole, roleMineId, roleFaceId, selectedProvince])
   const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId, roleFaceId])
+  const ranking = useMemo(() => useStore.getState().getFaceLevelRanking(), [userRole, roleMineId, roleFaceId, selectedProvince])
   const isGroup = userRole === 'group'
+  const isFaceLevel = userRole === 'mine' || (userRole === 'team' && !roleFaceId)
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -125,10 +126,8 @@ export default function Dashboard() {
     if (!barRef.current) return
     const chart = echarts.init(barRef.current)
 
-    const sorted = [...filteredMines].sort(
-      (a, b) => b.gasOverlimitDuration - a.gasOverlimitDuration
-    )
-    const top10 = sorted.slice(0, 10)
+    const top10 = ranking.slice(0, 10)
+    const unitLabel = isGroup ? 'h' : ''
 
     chart.setOption({
       backgroundColor: 'transparent',
@@ -141,7 +140,7 @@ export default function Dashboard() {
       },
       yAxis: {
         type: 'category',
-        data: top10.map((m) => m.name),
+        data: top10.map((item) => item.name),
         inverse: true,
         axisLine: { show: false },
         axisTick: { show: false },
@@ -154,8 +153,8 @@ export default function Dashboard() {
       series: [
         {
           type: 'bar',
-          data: top10.map((m, i) => ({
-            value: m.gasOverlimitDuration,
+          data: top10.map((item, i) => ({
+            value: item.value,
             itemStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
                 { offset: 0, color: i < 3 ? '#f97316' : '#3b82f6' },
@@ -168,7 +167,7 @@ export default function Dashboard() {
           label: {
             show: true,
             position: 'right',
-            formatter: '{c}h',
+            formatter: `{c}${unitLabel}`,
             color: 'rgba(255,255,255,0.7)',
             fontSize: 11,
           },
@@ -181,7 +180,9 @@ export default function Dashboard() {
         textStyle: { color: '#fff', fontSize: 12 },
         formatter: (params: any) => {
           const p = params[0]
-          return `${p.name}<br/>瓦斯超限时长: ${p.value}h`
+          return isGroup
+            ? `${p.name}<br/>瓦斯超限时长: ${p.value}h`
+            : `${p.name}<br/>瓦斯超限指数: ${p.value}`
         },
       },
     })
@@ -192,9 +193,14 @@ export default function Dashboard() {
       window.removeEventListener('resize', onResize)
       chart.dispose()
     }
-  }, [filteredMines, userRole, roleMineId, roleFaceId])
+  }, [ranking, userRole, roleMineId, roleFaceId])
 
   const mapTitle = isGroup ? '全国矿井安全分布' : '矿区安全分布'
+  const rankingTitle = isGroup
+    ? `${scopeLabel} 瓦斯超限时长 TOP${Math.min(ranking.length, 10)}`
+    : isFaceLevel
+      ? `${scopeLabel} 工作面瓦斯排名 TOP${Math.min(ranking.length, 10)}`
+      : `${scopeLabel} 瓦斯超限指标`
 
   return (
     <div className="min-h-screen bg-[#0A1628] p-6 flex flex-col gap-5">
@@ -253,7 +259,7 @@ export default function Dashboard() {
 
         <GlassCard className="flex-[2] flex flex-col p-4 min-h-[500px]">
           <h2 className="text-white font-semibold text-base mb-3">
-            {scopeLabel}瓦斯超限时长 TOP{Math.min(filteredMines.length, 10)}
+            {rankingTitle}
           </h2>
           <div ref={barRef} className="flex-1 min-h-0" />
         </GlassCard>

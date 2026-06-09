@@ -10,6 +10,8 @@ import {
   ChevronDown,
   Shield,
 } from "lucide-react";
+import { useStore } from "@/store";
+import { mines } from "@/data/mock";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "总览" },
@@ -19,13 +21,24 @@ const navItems = [
   { to: "/reports", icon: BarChart3, label: "报表中心" },
 ];
 
-const roles = ["集团", "矿级", "班组"];
+const roleMap: Record<string, "group" | "mine" | "team"> = {
+  集团: "group",
+  矿级: "mine",
+  班组: "team",
+};
+const roleLabels: Record<string, string> = { group: "集团", mine: "矿级", team: "班组" };
+const roleKeys = Object.keys(roleMap);
 
 export default function Layout() {
   const [time, setTime] = useState(new Date());
   const [roleOpen, setRoleOpen] = useState(false);
-  const [role, setRole] = useState("集团");
-  const [alertCount] = useState(3);
+  const [mineOpen, setMineOpen] = useState(false);
+
+  const userRole = useStore((s) => s.userRole);
+  const roleMineId = useStore((s) => s.roleMineId);
+  const setUserRole = useStore((s) => s.setUserRole);
+  const setRoleMineId = useStore((s) => s.setRoleMineId);
+  const pendingCount = useStore((s) => s.alerts.filter((a) => a.status === "pending").length);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -41,6 +54,9 @@ export default function Layout() {
     second: "2-digit",
     hour12: false,
   });
+
+  const currentLabel = roleLabels[userRole];
+  const selectedMine = mines.find((m) => m.id === roleMineId);
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
@@ -60,9 +76,7 @@ export default function Layout() {
               end={item.to === "/"}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? "border-l-2 font-medium"
-                    : "hover:bg-white/5"
+                  isActive ? "border-l-2 font-medium" : "hover:bg-white/5"
                 }`
               }
               style={({ isActive }) =>
@@ -91,27 +105,24 @@ export default function Layout() {
             {formatted}
           </span>
 
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <div className="relative">
               <button
-                onClick={() => setRoleOpen(!roleOpen)}
+                onClick={() => { setRoleOpen(!roleOpen); setMineOpen(false); }}
                 className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors"
                 style={{ color: "var(--text-primary)", background: "var(--accent-dim)" }}
               >
-                {role}
+                {currentLabel}
                 <ChevronDown size={14} />
               </button>
               {roleOpen && (
-                <div
-                  className="absolute right-0 mt-1 w-24 rounded-lg py-1 z-50"
-                  style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}
-                >
-                  {roles.map((r) => (
+                <div className="absolute right-0 mt-1 w-24 rounded-lg py-1 z-50" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}>
+                  {roleKeys.map((r) => (
                     <button
                       key={r}
-                      onClick={() => { setRole(r); setRoleOpen(false); }}
+                      onClick={() => { setUserRole(roleMap[r]); setRoleOpen(false); }}
                       className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:bg-white/5"
-                      style={{ color: r === role ? "var(--accent)" : "var(--text-secondary)" }}
+                      style={{ color: r === currentLabel ? "var(--accent)" : "var(--text-secondary)" }}
                     >
                       {r}
                     </button>
@@ -120,14 +131,41 @@ export default function Layout() {
               )}
             </div>
 
+            {userRole !== "group" && (
+              <div className="relative">
+                <button
+                  onClick={() => { setMineOpen(!mineOpen); setRoleOpen(false); }}
+                  className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors max-w-48 truncate"
+                  style={{ color: "var(--text-primary)", background: "var(--accent-dim)" }}
+                >
+                  {selectedMine?.name ?? "选择矿区"}
+                  <ChevronDown size={14} className="shrink-0" />
+                </button>
+                {mineOpen && (
+                  <div className="absolute right-0 mt-1 w-56 max-h-64 overflow-y-auto rounded-lg py-1 z-50" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}>
+                    {mines.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => { setRoleMineId(m.id); setMineOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:bg-white/5 truncate"
+                        style={{ color: m.id === roleMineId ? "var(--accent)" : "var(--text-secondary)" }}
+                      >
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button className="relative" style={{ color: "var(--text-secondary)" }}>
               <Bell size={18} />
-              {alertCount > 0 && (
+              {pendingCount > 0 && (
                 <span
                   className="absolute -top-1.5 -right-1.5 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center"
                   style={{ background: "var(--danger)", color: "#fff" }}
                 >
-                  {alertCount}
+                  {pendingCount}
                 </span>
               )}
             </button>

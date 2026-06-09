@@ -1,15 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import * as echarts from 'echarts'
 import GlassCard from '@/components/GlassCard'
-import { weeklyReports } from '@/data/mock'
+import { useStore } from '@/store'
+import { workingFaces } from '@/data/mock'
+import { useShallow } from 'zustand/react/shallow'
 import { TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Wrench, MapPin } from 'lucide-react'
-
-const current = weeklyReports[0]
-const prev = weeklyReports[1]
-const weeks = weeklyReports.slice().reverse()
-const weekLabels = weeks.map((w) => w.week)
-
-const faultTotal = current.equipmentFaultTypes.reduce((s, f) => s + f.count, 0)
 
 function getRectColor(rate: number) {
   if (rate > 85) return '#22c55e'
@@ -44,18 +39,81 @@ function CircleProgress({ rate, size = 120, stroke = 10 }: { rate: number; size?
   )
 }
 
-const recommendations = [
-  { icon: ShieldCheck, text: '违规率呈下降趋势，建议持续加强安全培训', priority: '低', color: 'text-green-400' },
-  { icon: Wrench, text: '输送机故障占比最高，建议加强日常维护', priority: '高', color: 'text-red-400' },
-  { icon: TrendingUp, text: '隐患整改率较上周提升5.2%，建议保持当前力度', priority: '低', color: 'text-green-400' },
-  { icon: MapPin, text: '推荐下周重点巡检区域：3201掘进工作面、4102掘进工作面', priority: '中', color: 'text-yellow-400' },
-]
+function getWeekPeriod() {
+  const now = new Date()
+  const day = now.getDay() || 7
+  const mon = new Date(now)
+  mon.setDate(now.getDate() - day + 1)
+  const sun = new Date(mon)
+  sun.setDate(mon.getDate() + 6)
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${fmt(mon)} ~ ${fmt(sun)}`
+}
+
+interface WeekData { week: string; violationRate: number; violationRateYoy: number; violationRateQoq: number }
+
+function buildSyntheticWeeks(current: { week: string; violationRate: number; violationRateYoy: number; violationRateQoq: number }) {
+  const weekNum = parseInt(current.week.replace(/[^\d]/g, ''), 10)
+  const weeks = []
+  for (let i = 3; i >= 0; i--) {
+    const wk = weekNum - i
+    const vr = +(current.violationRate + (Math.random() - 0.5) * 4).toFixed(1)
+    const yoy = +(current.violationRateYoy + (Math.random() - 0.5) * 3).toFixed(1)
+    const qoq = +(current.violationRateQoq + (Math.random() - 0.5) * 2).toFixed(1)
+    weeks.push({ week: `第${wk}周`, violationRate: vr, violationRateYoy: yoy, violationRateQoq: qoq })
+  }
+  return weeks
+}
+
+function buildPrevRectRates(currentRate: number) {
+  const rates: { week: string; rate: number }[] = []
+  const weekNum = parseInt(new Date().toLocaleDateString('zh-CN', { weekday: 'narrow' }) ? String(Math.ceil(new Date().getDate() / 7)) : '22', 10)
+  for (let i = 3; i >= 1; i--) {
+    const wk = weekNum - i
+    rates.push({ week: `第${wk}周`, rate: +(currentRate - 3 - Math.random() * 8).toFixed(1) })
+  }
+  return rates
+}
 
 const priorityBg: Record<string, string> = { 高: 'bg-red-500/20 text-red-400', 中: 'bg-yellow-500/20 text-yellow-400', 低: 'bg-green-500/20 text-green-400' }
 
 export default function Reports() {
+  const { userRole, roleMineId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId })))
+  const current = useMemo(() => useStore.getState().getComputedWeeklyReport(), [userRole, roleMineId])
+  const prev = useMemo(() => useStore.getState().getComputedPrevWeeklyReport(), [userRole, roleMineId])
+  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId])
+  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId])
+
   const lineRef = useRef<HTMLDivElement>(null)
   const doughnutRef = useRef<HTMLDivElement>(null)
+
+  const faultTotal = current.equipmentFaultTypes.reduce((s, f) => s + f.count, 0)
+
+  const synWeeks = useMemo(() => buildSyntheticWeeks(current), [current])
+  const prevRectRates = useMemo(() => buildPrevRectRates(current.hazardRectificationRate), [current.hazardRectificationRate])
+
+  const recommendations = useMemo(() => {
+    const recs: { icon: typeof ShieldCheck; text: string; priority: string; color: string }[] = []
+    if (current.violationRate > 10) {
+      recs.push({ icon: ShieldCheck, text: '违规率偏高，建议加强安全培训和现场监管', priority: '高', color: 'text-red-400' })
+    } else if (current.violationRate < 8) {
+      recs.push({ icon: ShieldCheck, text: '违规率呈下降趋势，建议持续加强安全培训', priority: '低', color: 'text-green-400' })
+    }
+    const maxFault = current.equipmentFaultTypes.reduce((a, b) => a.count > b.count ? a : b, current.equipmentFaultTypes[0])
+    if (maxFault?.type === '输送机故障') {
+      recs.push({ icon: Wrench, text: '输送机故障占比最高，建议加强日常维护', priority: '高', color: 'text-red-400' })
+    }
+    if (current.hazardRectificationRate > 85) {
+      recs.push({ icon: TrendingUp, text: '隐患整改率良好，建议保持当前力度', priority: '低', color: 'text-green-400' })
+    }
+    const faceNames: string[] = []
+    filteredMines.forEach(m => {
+      (workingFaces[m.id] || []).forEach(f => faceNames.push(f.name))
+    })
+    const topFaces = faceNames.slice(0, 3).join('、')
+    recs.push({ icon: MapPin, text: `推荐下周重点巡检区域：${topFaces}`, priority: '中', color: 'text-yellow-400' })
+    return recs
+  }, [current, filteredMines])
 
   useEffect(() => {
     if (!lineRef.current) return
@@ -65,24 +123,24 @@ export default function Reports() {
       grid: { left: 50, right: 20, top: 40, bottom: 30 },
       tooltip: { trigger: 'axis', backgroundColor: 'rgba(10,22,40,0.9)', borderColor: 'rgba(255,255,255,0.15)', textStyle: { color: '#fff', fontSize: 12 } },
       legend: { data: ['违规率', '同比', '环比'], textStyle: { color: 'rgba(255,255,255,0.7)', fontSize: 11 }, top: 5, right: 10 },
-      xAxis: { type: 'category', data: weekLabels, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } }, axisLabel: { color: 'rgba(255,255,255,0.6)' } },
+      xAxis: { type: 'category', data: synWeeks.map(w => w.week), axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } }, axisLabel: { color: 'rgba(255,255,255,0.6)' } },
       yAxis: { type: 'value', axisLine: { show: false }, splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } }, axisLabel: { color: 'rgba(255,255,255,0.5)', formatter: '{value}%' } },
       series: [
         {
-          name: '违规率', type: 'line', data: weeks.map((w) => w.violationRate),
+          name: '违规率', type: 'line', data: synWeeks.map(w => w.violationRate),
           smooth: true, symbol: 'circle', symbolSize: 8,
           lineStyle: { color: '#00D4FF', width: 3 },
           itemStyle: { color: '#00D4FF' },
           areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(0,212,255,0.35)' }, { offset: 1, color: 'rgba(0,212,255,0.02)' }]) },
         },
         {
-          name: '同比', type: 'line', data: weeks.map((w) => w.violationRateYoy),
+          name: '同比', type: 'line', data: synWeeks.map(w => w.violationRateYoy),
           smooth: true, symbol: 'diamond', symbolSize: 6,
           lineStyle: { color: '#FF6B35', width: 2, type: 'dashed' },
           itemStyle: { color: '#FF6B35' },
         },
         {
-          name: '环比', type: 'line', data: weeks.map((w) => w.violationRateQoq),
+          name: '环比', type: 'line', data: synWeeks.map(w => w.violationRateQoq),
           smooth: true, symbol: 'triangle', symbolSize: 6,
           lineStyle: { color: '#FFB300', width: 2, type: 'dashed' },
           itemStyle: { color: '#FFB300' },
@@ -92,7 +150,7 @@ export default function Reports() {
     const onResize = () => chart.resize()
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); chart.dispose() }
-  }, [])
+  }, [synWeeks, userRole, roleMineId])
 
   useEffect(() => {
     if (!doughnutRef.current) return
@@ -114,18 +172,18 @@ export default function Reports() {
     const onResize = () => chart.resize()
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); chart.dispose() }
-  }, [])
+  }, [faultTotal, current.equipmentFaultTypes, userRole, roleMineId])
 
-  const violationDelta = ((prev.totalViolations - current.totalViolations) / prev.totalViolations * 100).toFixed(1)
-  const faultDelta = ((prev.totalFaults - current.totalFaults) / prev.totalFaults * 100).toFixed(1)
+  const violationDelta = ((prev.totalViolations - current.totalViolations) / (prev.totalViolations || 1) * 100).toFixed(1)
+  const faultDelta = ((prev.totalFaults - current.totalFaults) / (prev.totalFaults || 1) * 100).toFixed(1)
   const rectDelta = (current.hazardRectificationRate - prev.hazardRectificationRate).toFixed(1)
 
   return (
     <div className="min-h-screen bg-[#0A1628] p-6 flex flex-col gap-5">
       <GlassCard>
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-white text-lg font-semibold">第22周 安全生产诊断报告</h1>
-          <span className="text-xs text-white/40">报告周期：2026-05-25 ~ 2026-05-31</span>
+          <h1 className="text-white text-lg font-semibold">{current.week} 安全生产诊断报告 — {scopeLabel}</h1>
+          <span className="text-xs text-white/40">报告周期：{getWeekPeriod()}</span>
         </div>
         <div className="grid grid-cols-3 gap-6">
           <div className="flex flex-col items-center gap-1">
@@ -168,11 +226,11 @@ export default function Reports() {
             </div>
           </div>
           <div className="flex gap-6 mt-5">
-            {weeklyReports.slice(1).map((w) => (
+            {prevRectRates.map((w) => (
               <div key={w.week} className="flex flex-col items-center gap-1">
-                <CircleProgress rate={w.hazardRectificationRate} size={48} stroke={4} />
+                <CircleProgress rate={w.rate} size={48} stroke={4} />
                 <span className="text-white/40 text-[10px]">{w.week}</span>
-                <span className="text-xs font-medium" style={{ color: getRectColor(w.hazardRectificationRate) }}>{w.hazardRectificationRate}%</span>
+                <span className="text-xs font-medium" style={{ color: getRectColor(w.rate) }}>{w.rate}%</span>
               </div>
             ))}
           </div>

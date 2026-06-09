@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as echarts from 'echarts'
 import GlassCard from '@/components/GlassCard'
 import StatCard from '@/components/StatCard'
 import { useStore } from '@/store'
-import { provinces, mines, provinceCoords } from '@/data/mock'
+import { mines, provinceCoords } from '@/data/mock'
+import { useShallow } from 'zustand/react/shallow'
 
 function getSafetyColor(val: number): string {
   if (val >= 90) return '#22c55e'
@@ -17,12 +18,16 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const selectedProvince = useStore((s) => s.selectedProvince)
   const setSelectedProvince = useStore((s) => s.setSelectedProvince)
+  const { userRole, roleMineId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId })))
+
   const mapRef = useRef<HTMLDivElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
-  const filteredProvinces = selectedProvince
-    ? provinces.filter((p) => p.id === selectedProvince)
-    : provinces
+  const filteredProvinces = useMemo(() => useStore.getState().getFilteredProvinces(), [userRole, roleMineId, selectedProvince])
+  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId, selectedProvince])
+  const stats = useMemo(() => useStore.getState().getComputedStats(), [userRole, roleMineId, selectedProvince])
+  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId])
+  const isGroup = userRole === 'group'
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -49,14 +54,8 @@ export default function Dashboard() {
             roam: true,
             zoom: 1.2,
             label: { show: false },
-            itemStyle: {
-              areaColor: '#0d1f3c',
-              borderColor: '#1e3a5f',
-              borderWidth: 1,
-            },
-            emphasis: {
-              itemStyle: { areaColor: '#162d50' },
-            },
+            itemStyle: { areaColor: '#0d1f3c', borderColor: '#1e3a5f', borderWidth: 1 },
+            emphasis: { itemStyle: { areaColor: '#162d50' } },
           },
           series: [
             {
@@ -120,15 +119,16 @@ export default function Dashboard() {
       window.removeEventListener('resize', onResize)
       chart.dispose()
     }
-  }, [filteredProvinces, navigate])
+  }, [filteredProvinces, userRole, roleMineId, navigate])
 
   useEffect(() => {
     if (!barRef.current) return
     const chart = echarts.init(barRef.current)
 
-    const top10 = [...mines]
-      .sort((a, b) => b.gasOverlimitDuration - a.gasOverlimitDuration)
-      .slice(0, 10)
+    const sorted = [...filteredMines].sort(
+      (a, b) => b.gasOverlimitDuration - a.gasOverlimitDuration
+    )
+    const top10 = sorted.slice(0, 10)
 
     chart.setOption({
       backgroundColor: 'transparent',
@@ -148,8 +148,7 @@ export default function Dashboard() {
         axisLabel: {
           color: (idx: number) => (idx < 3 ? '#f97316' : 'rgba(255,255,255,0.7)'),
           fontSize: 11,
-          formatter: (val: string, idx: number) =>
-            idx < 3 ? `🔴 ${val}` : val,
+          formatter: (val: string, idx: number) => (idx < 3 ? `🔴 ${val}` : val),
         },
       },
       series: [
@@ -193,39 +192,69 @@ export default function Dashboard() {
       window.removeEventListener('resize', onResize)
       chart.dispose()
     }
-  }, [])
+  }, [filteredMines, userRole, roleMineId])
+
+  const mapTitle = isGroup ? '全国矿井安全分布' : '矿区安全分布'
 
   return (
     <div className="min-h-screen bg-[#0A1628] p-6 flex flex-col gap-5">
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="安全指数" value={83.6} trend={2.1} unit="分" positiveIsGood />
-        <StatCard label="设备开机率" value={90.2} trend={0.8} unit="%" positiveIsGood />
-        <StatCard label="人员违规率" value={8.5} trend={-1.2} unit="%" positiveIsGood={false} />
-        <StatCard label="瓦斯超限时长" value={32} trend={-5.3} unit="h" positiveIsGood={false} />
+        <StatCard
+          label="安全指数"
+          value={stats.safetyIndex}
+          trend={stats.safetyIndexTrend}
+          unit="分"
+          positiveIsGood
+        />
+        <StatCard
+          label="设备开机率"
+          value={stats.equipmentUptimeRate}
+          trend={stats.equipmentTrend}
+          unit="%"
+          positiveIsGood
+        />
+        <StatCard
+          label="人员违规率"
+          value={stats.violationRate}
+          trend={stats.violationTrend}
+          unit="%"
+          positiveIsGood={false}
+        />
+        <StatCard
+          label="瓦斯超限时长"
+          value={stats.gasOverlimitDuration}
+          trend={stats.gasTrend}
+          unit="h"
+          positiveIsGood={false}
+        />
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
         <GlassCard className="flex-[3] flex flex-col p-4 min-h-[500px]">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-white font-semibold text-base">全国矿井安全分布</h2>
-            <select
-              value={selectedProvince ?? ''}
-              onChange={(e) => setSelectedProvince(e.target.value || null)}
-              className="bg-white/10 text-white text-sm rounded-lg px-3 py-1.5 border border-white/10 outline-none cursor-pointer"
-            >
-              <option value="" className="bg-[#0A1628]">全部省份</option>
-              {provinces.map((p) => (
-                <option key={p.id} value={p.id} className="bg-[#0A1628]">
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <h2 className="text-white font-semibold text-base">{mapTitle}</h2>
+            {isGroup && (
+              <select
+                value={selectedProvince ?? ''}
+                onChange={(e) => setSelectedProvince(e.target.value || null)}
+                className="bg-white/10 text-white text-sm rounded-lg px-3 py-1.5 border border-white/10 outline-none cursor-pointer"
+              >
+                <option value="" className="bg-[#0A1628]">全部省份</option>
+                {filteredProvinces.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-[#0A1628]">
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div ref={mapRef} className="flex-1 min-h-0" />
         </GlassCard>
 
         <GlassCard className="flex-[2] flex flex-col p-4 min-h-[500px]">
-          <h2 className="text-white font-semibold text-base mb-3">瓦斯超限时长 TOP10</h2>
+          <h2 className="text-white font-semibold text-base mb-3">
+            {scopeLabel}瓦斯超限时长 TOP{Math.min(filteredMines.length, 10)}
+          </h2>
           <div ref={barRef} className="flex-1 min-h-0" />
         </GlassCard>
       </div>

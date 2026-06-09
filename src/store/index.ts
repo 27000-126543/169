@@ -81,7 +81,7 @@ export const useStore = create<AppState>((set, get) => ({
     const state = get();
     if (role === 'group') {
       set({ userRole: role, roleMineId: null, selectedProvince: null, selectedMine: null });
-    } else if (!state.roleMineId && role !== 'group') {
+    } else if (!state.roleMineId) {
       set({ userRole: role, roleMineId: mines[0].id, selectedProvince: null, selectedMine: null });
     } else {
       set({ userRole: role, selectedProvince: null, selectedMine: null });
@@ -123,7 +123,7 @@ export const useStore = create<AppState>((set, get) => ({
   setGeologyAnalyzed: (v) => set({ geologyAnalyzed: v }),
 
   checkAndGenerateAlerts: () => {
-    const { alerts: currentAlerts, lastAlertCheck } = get();
+    const { alerts: currentAlerts } = get();
     const now = Date.now();
     const newAlerts: AlertRecord[] = [];
 
@@ -136,7 +136,7 @@ export const useStore = create<AppState>((set, get) => ({
         );
         if (face.gasConcentration > 1.0 && !existingGasAlert) {
           newAlerts.push({
-            id: `alert-auto-${now}-${face.id}`,
+            id: `alert-gas-${now}-${face.id}`,
             mineId: mine.id,
             faceId: face.id,
             level: '1',
@@ -151,27 +151,28 @@ export const useStore = create<AppState>((set, get) => ({
             ],
           });
         }
+      }
 
-        const existingViolationAlert = currentAlerts.find(
-          (a) => a.faceId === face.id && a.type === 'violation' && a.status !== 'closed'
-        );
-        if (mine.violationRate > 10 && !existingViolationAlert) {
-          newAlerts.push({
-            id: `alert-auto-v-${now}-${mine.id}`,
-            mineId: mine.id,
-            faceId: face.id,
-            level: '1',
-            type: 'violation',
-            status: 'pending',
-            triggeredAt: new Date(now).toISOString(),
-            description: `${mine.name}人员违规率连续2天超过10%，当前违规率${mine.violationRate}%`,
-            approvals: [
-              { role: '班组长', approver: '待指派', status: 'pending' },
-              { role: '矿总工程师', approver: '待指派', status: 'pending' },
-              { role: '集团安监局长', approver: '待指派', status: 'pending' },
-            ],
-          });
-        }
+      const existingViolationAlert = currentAlerts.find(
+        (a) => a.mineId === mine.id && a.type === 'violation' && a.status !== 'closed'
+      );
+      if (mine.violationRate > 10 && !existingViolationAlert) {
+        const firstFace = faces[0];
+        newAlerts.push({
+          id: `alert-viol-${now}-${mine.id}`,
+          mineId: mine.id,
+          faceId: firstFace?.id || `${mine.id}-f1`,
+          level: '1',
+          type: 'violation',
+          status: 'pending',
+          triggeredAt: new Date(now).toISOString(),
+          description: `${mine.name}人员违规率连续2天超过10%，当前违规率${mine.violationRate}%`,
+          approvals: [
+            { role: '班组长', approver: '待指派', status: 'pending' },
+            { role: '矿总工程师', approver: '待指派', status: 'pending' },
+            { role: '集团安监局长', approver: '待指派', status: 'pending' },
+          ],
+        });
       }
     }
 

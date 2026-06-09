@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter, Bell } from 'lucide-react';
 import GlassCard from '@/components/GlassCard';
 import { useStore } from '@/store';
-import { mines, workingFaces, type AlertRecord, type ApprovalStep } from '@/data/mock';
+import { workingFaces, type AlertRecord, type ApprovalStep } from '@/data/mock';
 
 const levelOptions = [
   { value: '', label: '全部' },
@@ -43,13 +43,14 @@ function formatTime(iso: string) {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function getMineName(alert: AlertRecord) {
+  const { getFilteredMines } = useStore.getState();
+  return getFilteredMines().find((m) => m.id === alert.mineId)?.name ?? alert.mineId;
+}
+
 function getFaceName(alert: AlertRecord) {
   const faces = workingFaces[alert.mineId] || [];
   return faces.find((f) => f.id === alert.faceId)?.name ?? alert.faceId;
-}
-
-function getMineName(alert: AlertRecord) {
-  return mines.find((m) => m.id === alert.mineId)?.name ?? alert.mineId;
 }
 
 function StepIcon({ step, isCurrent }: { step: ApprovalStep; isCurrent: boolean }) {
@@ -76,7 +77,9 @@ function StepIcon({ step, isCurrent }: { step: ApprovalStep; isCurrent: boolean 
 
 function ApprovalFlow({ alert }: { alert: AlertRecord }) {
   const approveStep = useStore((s) => s.approveStep);
+  const closeAlert = useStore((s) => s.closeAlert);
   const currentStepIndex = alert.approvals.findIndex((a) => a.status === 'pending');
+  const allApproved = alert.approvals.every((a) => a.status === 'approved');
 
   return (
     <div className="mt-4">
@@ -91,7 +94,7 @@ function ApprovalFlow({ alert }: { alert: AlertRecord }) {
               {step.status === 'approved' && step.approvedAt && (
                 <p className="text-green-400/60 text-[10px] mt-0.5">{formatTime(step.approvedAt)}</p>
               )}
-              {i === currentStepIndex && (
+              {i === currentStepIndex && alert.status !== 'closed' && (
                 <button
                   onClick={() => approveStep(alert.id, i)}
                   className="mt-2 px-3 py-1 text-xs rounded-md bg-blue-500/30 text-blue-300 border border-blue-500/40 hover:bg-blue-500/50 transition-colors"
@@ -106,6 +109,19 @@ function ApprovalFlow({ alert }: { alert: AlertRecord }) {
           </div>
         ))}
       </div>
+      {alert.status === 'closed' ? (
+        <div className="mt-3 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-gray-400" />
+          <span className="text-gray-400 text-sm font-medium">已处置</span>
+        </div>
+      ) : allApproved && alert.level === '2' && alert.status === 'approved' ? (
+        <button
+          onClick={() => closeAlert(alert.id)}
+          className="mt-3 px-4 py-2 text-sm rounded-md bg-red-500/30 text-red-300 border border-red-500/40 hover:bg-red-500/50 transition-colors font-medium"
+        >
+          执行停产撤人
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -114,14 +130,54 @@ export default function Alerts() {
   const alertFilter = useStore((s) => s.alertFilter);
   const setAlertFilter = useStore((s) => s.setAlertFilter);
   const getFilteredAlerts = useStore((s) => s.getFilteredAlerts);
+  const checkAndGenerateAlerts = useStore((s) => s.checkAndGenerateAlerts);
+  const checkAlertEscalation = useStore((s) => s.checkAlertEscalation);
+  const userRole = useStore((s) => s.userRole);
+  const roleMineId = useStore((s) => s.roleMineId);
+  const getFilteredMines = useStore((s) => s.getFilteredMines);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newCount, setNewCount] = useState(0);
 
+  useEffect(() => {
+    const prev = useStore.getState().alerts.length;
+    checkAndGenerateAlerts();
+    const after = useStore.getState().alerts.length;
+    const created = Math.max(0, after - prev);
+    if (created > 0) setNewCount(created);
+  }, [userRole, roleMineId]);
+
+  useEffect(() => {
+    const escalationInterval = setInterval(() => {
+      checkAlertEscalation();
+    }, 30000);
+    const generateInterval = setInterval(() => {
+      const prev = useStore.getState().alerts.length;
+      checkAndGenerateAlerts();
+      const after = useStore.getState().alerts.length;
+      const created = Math.max(0, after - prev);
+      if (created > 0) setNewCount((c) => c + created);
+    }, 60000);
+    return () => {
+      clearInterval(escalationInterval);
+      clearInterval(generateInterval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (userRole === 'mine' && roleMineId) {
+      setAlertFilter({ mineId: roleMineId });
+    } else if (userRole === 'team' && roleMineId) {
+      setAlertFilter({ mineId: roleMineId });
+    }
+  }, [userRole, roleMineId]);
+
+  const scopedMines = getFilteredMines();
   const filtered = getFilteredAlerts();
   const selected = filtered.find((a) => a.id === selectedId) ?? null;
 
   return (
     <div className="min-h-screen bg-[#0A1628] p-6 flex flex-col gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Filter className="w-4 h-4 text-white/50" />
         <select
           value={alertFilter.level}
@@ -141,10 +197,18 @@ export default function Alerts() {
           value={alertFilter.mineId}
           onChange={(e) => setAlertFilter({ mineId: e.target.value })}
           className="bg-white/10 text-white text-sm rounded-lg px-3 py-2 border border-white/10 outline-none cursor-pointer"
+          disabled={userRole === 'mine' || userRole === 'team'}
         >
           <option value="" className="bg-[#0A1628]">所属矿区：全部</option>
-          {mines.map((m) => <option key={m.id} value={m.id} className="bg-[#0A1628]">{m.name}</option>)}
+          {scopedMines.map((m) => <option key={m.id} value={m.id} className="bg-[#0A1628]">{m.name}</option>)}
         </select>
+        {newCount > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-sm animate-pulse">
+            <Bell className="w-4 h-4" />
+            <span>系统自动检测到 {newCount} 条新预警</span>
+            <button onClick={() => setNewCount(0)} className="ml-1 text-amber-400/60 hover:text-amber-300 text-xs">✕</button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">

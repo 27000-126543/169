@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter, Bell } from 'lucide-react';
+import { AlertTriangle, Flame, UserX, CheckCircle, Clock, ChevronDown, Filter, Bell, X } from 'lucide-react';
 import GlassCard from '@/components/GlassCard';
 import { useStore } from '@/store';
 import { workingFaces, type AlertRecord, type ApprovalStep } from '@/data/mock';
@@ -126,6 +126,29 @@ function ApprovalFlow({ alert }: { alert: AlertRecord }) {
   );
 }
 
+function LevelOneActions({ alert }: { alert: AlertRecord }) {
+  const closeAlert = useStore((s) => s.closeAlert);
+  if (alert.status === 'closed') {
+    return (
+      <div className="mt-3 flex items-center gap-2">
+        <CheckCircle className="w-4 h-4 text-gray-400" />
+        <span className="text-gray-400 text-sm font-medium">已处置</span>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <span className="text-yellow-400/70 text-xs">一级预警 · 待现场处置</span>
+      <button
+        onClick={() => closeAlert(alert.id)}
+        className="px-3 py-1.5 text-xs rounded-md bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 hover:bg-yellow-500/30 transition-colors"
+      >
+        立即处理
+      </button>
+    </div>
+  );
+}
+
 export default function Alerts() {
   const alertFilter = useStore((s) => s.alertFilter);
   const setAlertFilter = useStore((s) => s.setAlertFilter);
@@ -163,17 +186,11 @@ export default function Alerts() {
     };
   }, []);
 
-  useEffect(() => {
-    if (userRole === 'mine' && roleMineId) {
-      setAlertFilter({ mineId: roleMineId });
-    } else if (userRole === 'team' && roleMineId) {
-      setAlertFilter({ mineId: roleMineId });
-    }
-  }, [userRole, roleMineId]);
-
   const scopedMines = getFilteredMines();
   const filtered = getFilteredAlerts();
   const selected = filtered.find((a) => a.id === selectedId) ?? null;
+
+  const isMineFilterLocked = userRole === 'mine' || userRole === 'team';
 
   return (
     <div className="min-h-screen bg-[#0A1628] p-6 flex flex-col gap-4">
@@ -197,7 +214,7 @@ export default function Alerts() {
           value={alertFilter.mineId}
           onChange={(e) => setAlertFilter({ mineId: e.target.value })}
           className="bg-white/10 text-white text-sm rounded-lg px-3 py-2 border border-white/10 outline-none cursor-pointer"
-          disabled={userRole === 'mine' || userRole === 'team'}
+          disabled={isMineFilterLocked}
         >
           <option value="" className="bg-[#0A1628]">所属矿区：全部</option>
           {scopedMines.map((m) => <option key={m.id} value={m.id} className="bg-[#0A1628]">{m.name}</option>)}
@@ -247,7 +264,11 @@ export default function Alerts() {
                     <span>预警类型：{alert.type === 'gas' ? '瓦斯超限' : '人员违规'}</span>
                     <span>级别：{alert.level}级</span>
                   </div>
-                  <ApprovalFlow alert={alert} />
+                  {alert.level === '1' && alert.status === 'pending' ? (
+                    <LevelOneActions alert={alert} />
+                  ) : (
+                    <ApprovalFlow alert={alert} />
+                  )}
                 </div>
               )}
             </GlassCard>
@@ -273,7 +294,11 @@ export default function Alerts() {
                 <p className="text-white/50 text-xs mb-1">描述</p>
                 <p className="text-white/80 text-sm leading-relaxed">{selected.description}</p>
               </div>
-              <ApprovalFlow alert={selected} />
+              {selected.level === '1' && selected.status === 'pending' ? (
+                <LevelOneActions alert={selected} />
+              ) : (
+                <ApprovalFlow alert={selected} />
+              )}
             </GlassCard>
           </div>
         )}

@@ -9,6 +9,7 @@ interface AppState {
   selectedFace: string | null;
   userRole: UserRole;
   roleMineId: string | null;
+  roleFaceId: string | null;
   alertFilter: { level: string; status: string; mineId: string };
   alerts: AlertRecord[];
   geologyUploadedPoints: RiskPoint[];
@@ -20,6 +21,7 @@ interface AppState {
   setSelectedFace: (id: string | null) => void;
   setUserRole: (role: UserRole) => void;
   setRoleMineId: (id: string | null) => void;
+  setRoleFaceId: (id: string | null) => void;
   setAlertFilter: (filter: Partial<AppState['alertFilter']>) => void;
   approveStep: (alertId: string, stepIndex: number) => void;
   closeAlert: (alertId: string) => void;
@@ -31,6 +33,7 @@ interface AppState {
   getFilteredAlerts: () => AlertRecord[];
   getFilteredMines: () => typeof mines;
   getFilteredProvinces: () => typeof provinces;
+  getFilteredFaces: () => typeof workingFaces[string];
   getScopeLabel: () => string;
   getComputedStats: () => {
     safetyIndex: number;
@@ -68,6 +71,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectedFace: null,
   userRole: 'group',
   roleMineId: null,
+  roleFaceId: null,
   alertFilter: { level: '', status: '', mineId: '' },
   alerts: initialAlerts,
   geologyUploadedPoints: [],
@@ -80,14 +84,22 @@ export const useStore = create<AppState>((set, get) => ({
   setUserRole: (role) => {
     const state = get();
     if (role === 'group') {
-      set({ userRole: role, roleMineId: null, selectedProvince: null, selectedMine: null });
+      set({ userRole: role, roleMineId: null, roleFaceId: null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: '' } });
     } else if (!state.roleMineId) {
-      set({ userRole: role, roleMineId: mines[0].id, selectedProvince: null, selectedMine: null });
+      const firstMine = mines[0];
+      const firstFace = workingFaces[firstMine.id]?.[0];
+      set({ userRole: role, roleMineId: firstMine.id, roleFaceId: role === 'team' ? firstFace?.id ?? null : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: firstMine.id } });
     } else {
-      set({ userRole: role, selectedProvince: null, selectedMine: null });
+      const faces = workingFaces[state.roleMineId] || [];
+      set({ userRole: role, roleFaceId: role === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: state.roleMineId } });
     }
   },
-  setRoleMineId: (id) => set({ roleMineId: id, selectedProvince: null, selectedMine: null }),
+  setRoleMineId: (id) => {
+    const faces = id ? workingFaces[id] || [] : [];
+    const { userRole } = get();
+    set({ roleMineId: id, roleFaceId: userRole === 'team' ? (faces[0]?.id ?? null) : null, selectedProvince: null, selectedMine: null, alertFilter: { level: '', status: '', mineId: id || '' } });
+  },
+  setRoleFaceId: (id) => set({ roleFaceId: id }),
   setAlertFilter: (filter) => set((state) => ({ alertFilter: { ...state.alertFilter, ...filter } })),
 
   approveStep: (alertId, stepIndex) =>
@@ -123,13 +135,16 @@ export const useStore = create<AppState>((set, get) => ({
   setGeologyAnalyzed: (v) => set({ geologyAnalyzed: v }),
 
   checkAndGenerateAlerts: () => {
-    const { alerts: currentAlerts } = get();
+    const { alerts: currentAlerts, roleFaceId } = get();
     const now = Date.now();
     const newAlerts: AlertRecord[] = [];
 
     const scopedMines = get().getFilteredMines();
     for (const mine of scopedMines) {
-      const faces = workingFaces[mine.id] || [];
+      let faces = workingFaces[mine.id] || [];
+      if (roleFaceId) {
+        faces = faces.filter((f) => f.id === roleFaceId);
+      }
       for (const face of faces) {
         const existingGasAlert = currentAlerts.find(
           (a) => a.faceId === face.id && a.type === 'gas' && a.status !== 'closed'
@@ -212,15 +227,19 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   getFilteredAlerts: () => {
-    const { alertFilter, alerts: allAlerts, userRole, roleMineId } = get();
+    const { alertFilter, alerts: allAlerts, userRole, roleMineId, roleFaceId } = get();
     let filtered = allAlerts;
 
     if (userRole === 'mine' && roleMineId) {
       filtered = filtered.filter((a) => a.mineId === roleMineId);
     } else if (userRole === 'team' && roleMineId) {
-      const faces = workingFaces[roleMineId] || [];
-      const faceIds = faces.map((f) => f.id);
-      filtered = filtered.filter((a) => faceIds.includes(a.faceId));
+      if (roleFaceId) {
+        filtered = filtered.filter((a) => a.faceId === roleFaceId);
+      } else {
+        const faces = workingFaces[roleMineId] || [];
+        const faceIds = faces.map((f) => f.id);
+        filtered = filtered.filter((a) => faceIds.includes(a.faceId));
+      }
     }
 
     return filtered.filter((a) => {
@@ -252,17 +271,51 @@ export const useStore = create<AppState>((set, get) => ({
     return provinces;
   },
 
+  getFilteredFaces: () => {
+    const { userRole, roleMineId, roleFaceId } = get();
+    const mineId = roleMineId || '';
+    const faces = workingFaces[mineId] || [];
+    if (userRole === 'team' && roleFaceId) {
+      return faces.filter((f) => f.id === roleFaceId);
+    }
+    return faces;
+  },
+
   getScopeLabel: () => {
-    const { userRole, roleMineId } = get();
+    const { userRole, roleMineId, roleFaceId } = get();
     if (userRole === 'group') return '全国';
     if (roleMineId) {
       const mine = mines.find((m) => m.id === roleMineId);
-      return mine ? mine.name : '未知矿区';
+      const mineName = mine ? mine.name : '未知矿区';
+      if (userRole === 'team' && roleFaceId) {
+        const faces = workingFaces[roleMineId] || [];
+        const face = faces.find((f) => f.id === roleFaceId);
+        return face ? `${mineName} · ${face.name}` : mineName;
+      }
+      return mineName;
     }
     return userRole === 'mine' ? '单矿区' : '班组';
   },
 
   getComputedStats: () => {
+    const { userRole, roleMineId, roleFaceId } = get();
+    if (userRole === 'team' && roleMineId && roleFaceId) {
+      const faces = workingFaces[roleMineId] || [];
+      const face = faces.find((f) => f.id === roleFaceId);
+      const mine = mines.find((m) => m.id === roleMineId);
+      if (face && mine) {
+        return {
+          safetyIndex: mine.safetyIndex,
+          equipmentUptimeRate: mine.equipmentUptimeRate,
+          violationRate: mine.violationRate,
+          gasOverlimitDuration: face.gasConcentration > 1 ? Math.round(face.gasConcentration * 10) : 0,
+          safetyIndexTrend: +(1.5 + Math.random() * 1.5).toFixed(1),
+          equipmentTrend: +(0.5 + Math.random() * 1).toFixed(1),
+          violationTrend: +(-1.5 - Math.random() * 1).toFixed(1),
+          gasTrend: +(-3 - Math.random() * 3).toFixed(1),
+        };
+      }
+    }
     const filteredMines = get().getFilteredMines();
     const count = filteredMines.length || 1;
     const safetyIndex = +(filteredMines.reduce((s, m) => s + m.safetyIndex, 0) / count).toFixed(1);
@@ -344,7 +397,10 @@ export const useStore = create<AppState>((set, get) => ({
 
 export function useMineDetail() {
   const selectedMine = useStore((s) => s.selectedMine);
-  const mine = mines.find((m) => m.id === selectedMine);
-  const faces = selectedMine ? workingFaces[selectedMine] || [] : [];
-  return { mine: mine || null, faces };
+  const roleMineId = useStore((s) => s.roleMineId);
+  const userRole = useStore((s) => s.userRole);
+  const effectiveMineId = userRole !== 'group' && roleMineId ? roleMineId : selectedMine;
+  const mine = mines.find((m) => m.id === effectiveMineId);
+  const faces = effectiveMineId ? workingFaces[effectiveMineId] || [] : [];
+  return { mine: mine || null, faces, effectiveMineId };
 }

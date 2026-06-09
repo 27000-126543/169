@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as echarts from 'echarts'
 import GlassCard from '@/components/GlassCard'
@@ -31,10 +31,24 @@ const statusDot: Record<string, string> = {
 export default function MineDetail() {
   const { mineId } = useParams<{ mineId: string }>()
   const navigate = useNavigate()
+  const userRole = useStore((s) => s.userRole)
+  const roleMineId = useStore((s) => s.roleMineId)
+  const roleFaceId = useStore((s) => s.roleFaceId)
   const setSelectedMine = useStore((s) => s.setSelectedMine)
 
-  const mine = mines.find((m) => m.id === mineId)
-  const faces = mineId ? workingFaces[mineId] || [] : []
+  const effectiveMineId = useMemo(() => {
+    if (userRole !== 'group' && roleMineId) return roleMineId
+    return mineId || null
+  }, [userRole, roleMineId, mineId])
+
+  const mine = mines.find((m) => m.id === effectiveMineId)
+  const allFaces = effectiveMineId ? workingFaces[effectiveMineId] || [] : []
+  const faces = useMemo(() => {
+    if (userRole === 'team' && roleFaceId) {
+      return allFaces.filter((f) => f.id === roleFaceId)
+    }
+    return allFaces
+  }, [userRole, roleFaceId, allFaces])
 
   const [selectedFaceId, setSelectedFaceId] = useState<string>(
     faces[0]?.id || '',
@@ -47,14 +61,20 @@ export default function MineDetail() {
   const selectedFace = faces.find((f) => f.id === selectedFaceId)
 
   useEffect(() => {
-    if (mineId) setSelectedMine(mineId)
-  }, [mineId, setSelectedMine])
+    if (effectiveMineId) setSelectedMine(effectiveMineId)
+  }, [effectiveMineId, setSelectedMine])
 
   useEffect(() => {
     if (faces.length > 0 && !faces.find((f) => f.id === selectedFaceId)) {
       setSelectedFaceId(faces[0].id)
     }
   }, [faces, selectedFaceId])
+
+  useEffect(() => {
+    if (userRole !== 'group' && roleMineId) {
+      navigate(`/mine/${roleMineId}`, { replace: true })
+    }
+  }, [userRole, roleMineId, navigate])
 
   useEffect(() => {
     if (!gasRef.current || !selectedFaceId) return
@@ -285,12 +305,14 @@ export default function MineDetail() {
   return (
     <div className="min-h-screen bg-slate-950 p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-4">
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-1 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/20 transition-colors"
-        >
-          ← 返回
-        </button>
+        {userRole === 'group' && (
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-1 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/20 transition-colors"
+          >
+            ← 返回
+          </button>
+        )}
         <h1 className="text-xl font-bold text-white">{mine.name}</h1>
         <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${safetyColor}`}>
           安全指数 {mine.safetyIndex}

@@ -18,15 +18,15 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const selectedProvince = useStore((s) => s.selectedProvince)
   const setSelectedProvince = useStore((s) => s.setSelectedProvince)
-  const { userRole, roleMineId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId })))
+  const { userRole, roleMineId, roleFaceId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId, roleFaceId: s.roleFaceId })))
 
   const mapRef = useRef<HTMLDivElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
-  const filteredProvinces = useMemo(() => useStore.getState().getFilteredProvinces(), [userRole, roleMineId, selectedProvince])
-  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId, selectedProvince])
-  const stats = useMemo(() => useStore.getState().getComputedStats(), [userRole, roleMineId, selectedProvince])
-  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId])
+  const filteredProvinces = useMemo(() => useStore.getState().getFilteredProvinces(), [userRole, roleMineId, roleFaceId, selectedProvince])
+  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId, roleFaceId, selectedProvince])
+  const stats = useMemo(() => useStore.getState().getComputedStats(), [userRole, roleMineId, roleFaceId, selectedProvince])
+  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId, roleFaceId])
   const isGroup = userRole === 'group'
 
   useEffect(() => {
@@ -119,7 +119,7 @@ export default function Dashboard() {
       window.removeEventListener('resize', onResize)
       chart.dispose()
     }
-  }, [filteredProvinces, userRole, roleMineId, navigate])
+  }, [filteredProvinces, userRole, roleMineId, roleFaceId, navigate])
 
   useEffect(() => {
     if (!barRef.current) return
@@ -192,7 +192,7 @@ export default function Dashboard() {
       window.removeEventListener('resize', onResize)
       chart.dispose()
     }
-  }, [filteredMines, userRole, roleMineId])
+  }, [filteredMines, userRole, roleMineId, roleFaceId])
 
   const mapTitle = isGroup ? '全国矿井安全分布' : '矿区安全分布'
 

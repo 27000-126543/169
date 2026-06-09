@@ -78,11 +78,11 @@ function buildPrevRectRates(currentRate: number) {
 const priorityBg: Record<string, string> = { 高: 'bg-red-500/20 text-red-400', 中: 'bg-yellow-500/20 text-yellow-400', 低: 'bg-green-500/20 text-green-400' }
 
 export default function Reports() {
-  const { userRole, roleMineId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId })))
-  const current = useMemo(() => useStore.getState().getComputedWeeklyReport(), [userRole, roleMineId])
-  const prev = useMemo(() => useStore.getState().getComputedPrevWeeklyReport(), [userRole, roleMineId])
-  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId])
-  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId])
+  const { userRole, roleMineId, roleFaceId } = useStore(useShallow(s => ({ userRole: s.userRole, roleMineId: s.roleMineId, roleFaceId: s.roleFaceId })))
+  const current = useMemo(() => useStore.getState().getComputedWeeklyReport(), [userRole, roleMineId, roleFaceId])
+  const prev = useMemo(() => useStore.getState().getComputedPrevWeeklyReport(), [userRole, roleMineId, roleFaceId])
+  const scopeLabel = useMemo(() => useStore.getState().getScopeLabel(), [userRole, roleMineId, roleFaceId])
+  const filteredMines = useMemo(() => useStore.getState().getFilteredMines(), [userRole, roleMineId, roleFaceId])
 
   const lineRef = useRef<HTMLDivElement>(null)
   const doughnutRef = useRef<HTMLDivElement>(null)
@@ -150,7 +150,7 @@ export default function Reports() {
     const onResize = () => chart.resize()
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); chart.dispose() }
-  }, [synWeeks, userRole, roleMineId])
+  }, [synWeeks, userRole, roleMineId, roleFaceId])
 
   useEffect(() => {
     if (!doughnutRef.current) return
@@ -172,7 +172,7 @@ export default function Reports() {
     const onResize = () => chart.resize()
     window.addEventListener('resize', onResize)
     return () => { window.removeEventListener('resize', onResize); chart.dispose() }
-  }, [faultTotal, current.equipmentFaultTypes, userRole, roleMineId])
+  }, [faultTotal, current.equipmentFaultTypes, userRole, roleMineId, roleFaceId])
 
   const violationDelta = ((prev.totalViolations - current.totalViolations) / (prev.totalViolations || 1) * 100).toFixed(1)
   const faultDelta = ((prev.totalFaults - current.totalFaults) / (prev.totalFaults || 1) * 100).toFixed(1)

@@ -11,7 +11,7 @@ import {
   Shield,
 } from "lucide-react";
 import { useStore } from "@/store";
-import { mines } from "@/data/mock";
+import { mines, workingFaces } from "@/data/mock";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "总览" },
@@ -33,11 +33,14 @@ export default function Layout() {
   const [time, setTime] = useState(new Date());
   const [roleOpen, setRoleOpen] = useState(false);
   const [mineOpen, setMineOpen] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
 
   const userRole = useStore((s) => s.userRole);
   const roleMineId = useStore((s) => s.roleMineId);
+  const roleFaceId = useStore((s) => s.roleFaceId);
   const setUserRole = useStore((s) => s.setUserRole);
   const setRoleMineId = useStore((s) => s.setRoleMineId);
+  const setRoleFaceId = useStore((s) => s.setRoleFaceId);
   const pendingCount = useStore((s) => s.alerts.filter((a) => a.status === "pending").length);
 
   useEffect(() => {
@@ -57,6 +60,8 @@ export default function Layout() {
 
   const currentLabel = roleLabels[userRole];
   const selectedMine = mines.find((m) => m.id === roleMineId);
+  const currentFaces = roleMineId ? workingFaces[roleMineId] || [] : [];
+  const selectedFace = currentFaces.find((f) => f.id === roleFaceId);
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-primary)" }}>
@@ -134,7 +139,7 @@ export default function Layout() {
             {userRole !== "group" && (
               <div className="relative">
                 <button
-                  onClick={() => { setMineOpen(!mineOpen); setRoleOpen(false); }}
+                  onClick={() => { setMineOpen(!mineOpen); setRoleOpen(false); setFaceOpen(false); }}
                   className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors max-w-48 truncate"
                   style={{ color: "var(--text-primary)", background: "var(--accent-dim)" }}
                 >
@@ -151,6 +156,40 @@ export default function Layout() {
                         style={{ color: m.id === roleMineId ? "var(--accent)" : "var(--text-secondary)" }}
                       >
                         {m.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {userRole === "team" && currentFaces.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => { setFaceOpen(!faceOpen); setRoleOpen(false); setMineOpen(false); }}
+                  className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md transition-colors max-w-40 truncate"
+                  style={{ color: "var(--text-primary)", background: "var(--accent-dim)" }}
+                >
+                  {selectedFace?.name ?? "选择工作面"}
+                  <ChevronDown size={14} className="shrink-0" />
+                </button>
+                {faceOpen && (
+                  <div className="absolute right-0 mt-1 w-48 max-h-48 overflow-y-auto rounded-lg py-1 z-50" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}>
+                    <button
+                      onClick={() => { setRoleFaceId(null); setFaceOpen(false); }}
+                      className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:bg-white/5"
+                      style={{ color: !roleFaceId ? "var(--accent)" : "var(--text-secondary)" }}
+                    >
+                      全部工作面
+                    </button>
+                    {currentFaces.map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => { setRoleFaceId(f.id); setFaceOpen(false); }}
+                        className="w-full text-left px-3 py-1.5 text-sm transition-colors hover:bg-white/5 truncate"
+                        style={{ color: f.id === roleFaceId ? "var(--accent)" : "var(--text-secondary)" }}
+                      >
+                        {f.name}
                       </button>
                     ))}
                   </div>
